@@ -45,38 +45,24 @@ for (fn_name in internal_fns) {
 }
 cat("✅", functions_exported_count, "internal functions exported to .GlobalEnv\n")
 
-# 2. Apply the same path fixes as setup_local_dev.sh
-cat("🔧 Applying path fixes (same as setup_local_dev.sh)...\n")
 
 use_package_file <- "../jheem_analyses/use_jheem2_package_setting.R"
 ryan_white_spec_file <- "../jheem_analyses/applications/ryan_white/ryan_white_specification.R"
 
-# Fix 1: Update USE.JHEEM2.PACKAGE setting
-if (file.exists(use_package_file)) {
-  system(paste0("sed -i '' 's/USE.JHEEM2.PACKAGE = F/USE.JHEEM2.PACKAGE = T/' '", use_package_file, "'"))
-  cat("✅ Updated USE.JHEEM2.PACKAGE setting\n")
-} else {
-  cat("⚠️  USE.JHEEM2.PACKAGE file not found, skipping\n")
-}
 
-# Fix 2: Update RW.DATA.MANAGER path
-if (file.exists(ryan_white_spec_file)) {
-  system(paste0("sed -i '' 's|../../cached/ryan.white.data.manager.rdata|../jheem_analyses/cached/ryan.white.data.manager.rdata|' '", ryan_white_spec_file, "'"))
-  cat("✅ Updated RW.DATA.MANAGER path\n")
-} else {
-  cat("❌ Ryan White specification file not found\n")
-  quit(status = 1)
-}
 
 # 3. Source Ryan White model specification
 cat("🧬 Loading Ryan White model specification...\n")
-tryCatch({
-  source("../jheem_analyses/applications/ryan_white/ryan_white_specification.R")
-  cat("✅ Ryan White specification loaded successfully\n")
-}, error = function(e) {
-  cat("❌ ERROR loading specification:", e$message, "\n")
-  quit(status = 1)
-})
+tryCatch(
+  {
+    source("../jheem_analyses/applications/ryan_white/ryan_white_specification.R")
+    cat("✅ Ryan White specification loaded successfully\n")
+  },
+  error = function(e) {
+    cat("❌ ERROR loading specification:", e$message, "\n")
+    quit(status = 1)
+  }
+)
 
 # 4. Verify key objects are available
 cat("🔍 Verifying key objects...\n")
@@ -97,22 +83,29 @@ if (length(missing_objects) > 0) {
   quit(status = 1)
 }
 
-# 5. Save workspace to parent directory (where it's expected)
-workspace_path <- paste0("../", output_file)
-cat("💾 Saving workspace to", workspace_path, "...\n")
-tryCatch({
-  save.image(file = workspace_path)
-  
-  # Check file size
-  file_size <- file.info(workspace_path)$size
-  file_size_mb <- round(file_size / 1024^2, 2)
-  cat("✅ Workspace saved successfully\n")
-  cat("📊 File size:", file_size_mb, "MB\n")
-  
-}, error = function(e) {
-  cat("❌ ERROR saving workspace:", e$message, "\n")
-  quit(status = 1)
-})
+# =============================================================
+# CORRECTED VERSION of Sections 5 and 6
+# =============================================================
+
+# 5. Save workspace to the path provided by the command line argument
+cat("💾 Saving workspace to", output_file, "...\n")
+file_size_mb <- NA # Initialize in case tryCatch fails before assignment
+
+tryCatch(
+  {
+    save.image(file = output_file)
+
+    # Check file size using the correct path
+    file_size <- file.info(output_file)$size
+    file_size_mb <- round(file_size / 1024^2, 2)
+    cat("✅ Workspace saved successfully\n")
+    cat("📊 File size:", file_size_mb, "MB\n")
+  },
+  error = function(e) {
+    cat("❌ ERROR saving workspace:", e$message, "\n")
+    quit(status = 1)
+  }
+)
 
 # 6. Final summary
 end_time <- Sys.time()
@@ -121,7 +114,7 @@ current_objects <- ls(envir = .GlobalEnv)
 
 cat("\n🎯 Ryan White workspace creation complete!\n")
 cat("⏱️  Total time:", round(total_time, 2), "seconds\n")
-cat("📁 Output file:", workspace_path, "\n")
-cat("📊 File size:", file_size_mb, "MB\n")
+cat("📁 Output file:", output_file, "\n") # Use the correct variable
+cat("📊 File size:", file_size_mb, "MB\n") # Use the correct variable
 cat("🔧 Objects included:", length(current_objects), "\n")
 cat("✅ Ready for container deployment\n")

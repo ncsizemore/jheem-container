@@ -27,9 +27,21 @@ RUN apt-get update && apt-get install -y \
   libpng16-16 \
   libfreetype6 \
   libfontconfig1-dev \
+  libnode-dev \
+  libudunits2-dev \
+  cmake \
+  libabsl-dev \
+  default-jdk \
   && rm -rf /var/lib/apt/lists/* \
-  && ln -s /usr/lib/x86_64-linux-gnu/libtiff.so.6 /usr/lib/x86_64-linux-gnu/libtiff.so.5 \
-  && ln -s /usr/lib/x86_64-linux-gnu/libjpeg.so.62 /usr/lib/x86_64-linux-gnu/libjpeg.so.8
+  && ARCH_LIB_DIR=$(dpkg-architecture -q DEB_HOST_MULTIARCH) \
+  # Symlink for gert (libgit2)
+  && ln -s "/usr/lib/${ARCH_LIB_DIR}/libgit2.so.1.9" "/usr/lib/${ARCH_LIB_DIR}/libgit2.so.1.5" \
+  # Symlink for V8 (libnode)
+  && ln -s "/usr/lib/${ARCH_LIB_DIR}/libnode.so.115" "/usr/lib/${ARCH_LIB_DIR}/libnode.so.108"
+
+# After installing Java, reconfigure R to recognize it.
+# This must be done BEFORE any R packages that need Java are installed.
+RUN R CMD javareconf
 
 # Install pak for faster package management
 RUN R -e "install.packages('pak', repos = 'https://r-lib.github.io/p/pak/stable/')"
@@ -45,19 +57,21 @@ COPY jheem-container-minimal/Rprofile.site /etc/R/
 RUN R -e "pak::pkg_install('renv')" && \
   R -e "renv::init(bare = TRUE)"
 
-# Debug: Check ICU version before attempting package restore
-RUN echo "🔍 Checking ICU version..." && \
-  pkg-config --modversion icu-i18n || echo "pkg-config failed" && \
-  ls -la /usr/lib/x86_64-linux-gnu/libicu* || echo "libicu files not found in x86_64-linux-gnu" && \
-  ls -la /usr/lib/libicu* || echo "libicu files not found in /usr/lib"
+RUN echo "source('renv/activate.R')" > .Rprofile
+
+# Handle problematic packages by installing them from source.
+# We are now adding 'sf' to this list.
+RUN echo "📦 Pre-installing tricky packages as binaries..." && \
+  R -e "renv::install(c('units', 'gert', 'V8'))" && \
+  echo "✅ Tricky packages installed."
+
+RUN echo "📦 Pre-installing problematic packages from source..." && \
+  R -e "renv::install('sf', type = 'source')" && \
+  echo "✅ sf installed from source."
+
 
 # Install packages: problematic ones from source, others as binaries
-RUN echo "📦 Installing stringi from source with bundled ICU..." && \
-  R -e "options(configure.args = c(stringi = '--disable-pkg-config')); install.packages('stringi', type = 'source'); cat('✅ stringi installed from source\n')" && \
-  echo "📦 Installing graphics packages from source..." && \
-  R -e "install.packages(c('systemfonts', 'textshaping'), type = 'binary'); cat('✅ ragg dependencies installed as binaries\n')" && \
-  R -e "install.packages(c('ragg', 'jpeg'), type = 'source', dependencies = FALSE); cat('✅ graphics packages installed from source\n')" && \
-  echo "📦 Installing remaining packages as binaries..." && \
+RUN  echo "📦 Installing remaining packages as binaries..." && \
   R -e "renv::restore()" && \
   echo "✅ All packages installed successfully"
 
@@ -70,43 +84,48 @@ RUN R --slave -e "\
   cat('✅ Base R environment ready\\n')"
 
 # =============================================================================
-# STAGE 2: Workspace Builder (Corrected Logic)
+# STAGE 2: Workspace Builder (Combined Create and Verify)
 # =============================================================================
 FROM jheem-base AS workspace-builder
 
-# Set the WORKDIR to /app to inherit the renv context.
-# We will NOT change this WORKDIR for the rest of this stage.
 WORKDIR /app
 
-# Copy necessary source files for building the workspace.
 COPY jheem/code/jheem_analyses/ jheem_analyses/
-# No need to copy jheem2_interactive source if it's installed as a package.
-# The create script now resides in the project root.
-COPY jheem-container-minimal/create_ryan_white_workspace.R ./
+RUN mkdir -p workspace_build
+COPY jheem-container-minimal/create_ryan_white_workspace.R workspace_build/
 
-# Apply path fixes (no change here)
 RUN echo "🔧 Applying path fixes..." && \
   sed -i 's/USE.JHEEM2.PACKAGE = F/USE.JHEEM2.PACKAGE = T/' jheem_analyses/use_jheem2_package_setting.R && \
-  # The path fix for the rdata file may need adjustment now that we run from /app
-  sed -i 's|../../cached/ryan.white.data.manager.rdata|jheem_analyses/cached/ryan.white.data.manager.rdata|' jheem_analyses/applications/ryan_white/ryan_white_specification.R && \
+  sed -i 's|../../cached/ryan.white.data.manager.rdata|../jheem_analyses/cached/ryan.white.data.manager.rdata|' jheem_analyses/applications/ryan_white/ryan_white_specification.R && \
   echo "✅ Path fixes applied"
 
-# Create the workspace by running the script from the project root.
-# Because R is started in /app where the .Rprofile (from the base stage) exists,
-# renv will be activated automatically and will find all the installed packages.
-RUN echo "🔧 Creating workspace..." && \
-  Rscript create_ryan_white_workspace.R ryan_white_workspace.RData
+# This single RUN command does EVERYTHING: creates the workspace, and then
+# immediately verifies its existence and lists the directory contents.
+RUN echo "🔧 Creating and verifying workspace in a single step..." && \
+  set -e && \
+  cd workspace_build && \
+  \
+  # Run the R script to create the workspace in the parent directory (/app)
+  RENV_PROJECT=/app R -e "tryCatch({ source('/app/renv/activate.R'); source('create_ryan_white_workspace.R') }, error = function(e) { message('ERROR in R script:'); print(e); quit(status=1) })" --args ../ryan_white_workspace.RData && \
+  \
+  echo "  - R script finished. Now verifying file existence..." && \
+  # Go back to the parent directory to check for the file
+  cd .. && \
+  echo "  - Current directory is now $(pwd)" && \
+  echo "  - Listing contents of current directory:" && \
+  ls -lh && \
+  \
+  # The final check. If this fails, the file was never written.
+  if [ ! -f "ryan_white_workspace.RData" ]; then \
+  echo "❌ VERIFICATION FAILED: ryan_white_workspace.RData does not exist in $(pwd)" ; \
+  exit 1; \
+  fi && \
+  \
+  echo "✅ VERIFICATION SUCCEEDED: ryan_white_workspace.RData found!"
 
-# Verify workspace was created in /app (no need to move it)
-RUN R --slave -e "\
-  if (!file.exists('ryan_white_workspace.RData')) { \
-  cat('❌ Workspace file not found\\n'); \
-  quit(status = 1); \
-  }; \
-  file_size_mb <- round(file.info('ryan_white_workspace.RData')\$size / 1024^2, 2); \
-  cat('✅ Workspace created:', file_size_mb, 'MB\\n')"
 
-# The final stage will then copy the workspace from /app/ryan_white_workspace.RData
+# We no longer need a separate verification step. If the above command succeeds, we are good.
+# The subsequent stage will copy from /app/ryan_white_workspace.RData
 
 # =============================================================================
 # STAGE 3: Final Runtime Container (Minimal)
