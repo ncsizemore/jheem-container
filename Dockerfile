@@ -81,6 +81,7 @@ RUN R --slave -e "\
   library(plotly); \
   library(jsonlite); \
   library(locations); \
+  library(distributions); \
   cat('✅ Base R environment ready\\n')"
 
 # =============================================================================
@@ -135,9 +136,15 @@ FROM jheem-base AS ryan-white-model
 # Copy only the generated workspace from builder stage
 COPY --from=workspace-builder /app/ryan_white_workspace.RData ./
 
-# Copy runtime scripts from container directory
+# Copy runtime scripts and modules from container directory
 COPY jheem-container-minimal/lambda_handler.R ./
 COPY jheem-container-minimal/plotting_minimal.R ./
+COPY jheem-container-minimal/simulation/ ./simulation/
+COPY jheem-container-minimal/plotting/ ./plotting/
+COPY jheem-container-minimal/tests/ ./tests/
+
+# Copy test base simulation for local testing
+COPY jheem-container-minimal/test_base_sim.rdata ./
 
 # Test that workspace loads correctly in final container
 RUN R --slave -e "\

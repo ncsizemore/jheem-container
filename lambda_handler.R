@@ -1,5 +1,6 @@
-# Lambda handler using workspace approach
-# Fast startup - just load workspace and handle requests
+# lambda_handler.R
+# Clean entry point for JHEEM Ryan White Lambda container
+# Loads workspace and coordinates simulation pipeline
 
 cat("🚀 JHEEM Ryan White Lambda handler starting...\n")
 
@@ -24,13 +25,29 @@ cat("✅ RW.SPECIFICATION available:", exists("RW.SPECIFICATION"), "\n")
 # Load plotting utilities
 source("plotting_minimal.R")
 
-# Handler function for simulation requests
+# Load simulation pipeline modules
+source("simulation/interventions.R")
+source("simulation/runner.R") 
+source("plotting/plot_generator.R")
+
+# Load test module
+source("tests/test_simulation.R")
+
+# ============================================================================
+# LAMBDA HANDLER FUNCTION
+# ============================================================================
+
+#' Main Lambda handler function
+#' @param event Lambda event object with city, base_simulation_path, parameters
+#' @param context Lambda context object
+#' @return JSON response with results or error
 handle_simulation_request <- function(event, context) {
   cat("📥 Received simulation request\n")
   
   tryCatch({
     # Parse request parameters
     city <- event$city %||% "C.12580"
+    base_simulation_path <- event$base_simulation_path %||% "/tmp/base_simulation.rdata"
     parameters <- event$parameters %||% list(
       adap_suppression_loss = 30,
       oahs_suppression_loss = 25,
@@ -38,22 +55,44 @@ handle_simulation_request <- function(event, context) {
     )
     
     cat("🏙️ Processing simulation for city:", city, "\n")
+    cat("📁 Base simulation path:", base_simulation_path, "\n")
     
-    # TODO: Load base simulation from S3
-    # TODO: Apply custom parameters  
-    # TODO: Run simulation
-    # TODO: Generate plots
+    # Check that base simulation file exists
+    if (!file.exists(base_simulation_path)) {
+      stop("Base simulation file not found: ", base_simulation_path)
+    }
     
-    # For now, return success with workspace info
+    # Step 1: Load base simulation (already downloaded by trigger lambda)
+    cat("📦 Loading base simulation data...\n")
+    load(base_simulation_path)
+    base_simset <- get(ls()[1])  # Get the first (and should be only) object
+    cat("✅ Base simulation loaded with", length(base_simset), "simulations\n")
+    
+    # Step 2: Create Ryan White intervention
+    cat("🔧 Creating Ryan White intervention...\n")
+    intervention <- create_ryan_white_intervention(parameters)
+    
+    # Step 3: Run simulation  
+    cat("🚀 Running custom simulation...\n")
+    results <- run_custom_simulation(base_simset, intervention)
+    
+    # Step 4: Generate plots
+    cat("📊 Generating plots...\n")
+    plots <- generate_simulation_plots(results, city, parameters)
+    
+    # Return success response
     response <- list(
       statusCode = 200,
       body = list(
-        message = "Ryan White simulation handler ready",
+        message = "Ryan White simulation completed successfully",
         city = city,
         parameters = parameters,
-        workspace_objects = length(ls()),
-        specification_available = exists("RW.SPECIFICATION"),
-        timestamp = Sys.time()
+        plots = plots,
+        metadata = list(
+          workspace_objects = length(ls()),
+          specification_available = exists("RW.SPECIFICATION"),
+          timestamp = Sys.time()
+        )
       )
     )
     
@@ -73,22 +112,34 @@ handle_simulation_request <- function(event, context) {
   })
 }
 
-# For testing outside Lambda
+# ============================================================================
+# TESTING (when not in Lambda environment)
+# ============================================================================
 if (interactive() || !exists("lambda_runtime")) {
   cat("🧪 Testing handler locally...\n")
   
-  test_event <- list(
-    city = "C.12580",
-    parameters = list(
-      adap_suppression_loss = 50,
-      oahs_suppression_loss = 30,
-      other_suppression_loss = 40
-    )
-  )
+  # Test the complete pipeline
+  test_results <- test_simulation_pipeline("/app/test_base_sim.rdata")
   
-  result <- handle_simulation_request(test_event, NULL)
-  cat("📤 Handler result:\n")
-  cat(result, "\n")
+  if (test_results$success) {
+    cat("📤 Running handler test...\n")
+    
+    test_event <- list(
+      city = "C.12580",
+      base_simulation_path = "/app/test_base_sim.rdata",
+      parameters = list(
+        adap_suppression_loss = 50,
+        oahs_suppression_loss = 30,
+        other_suppression_loss = 40
+      )
+    )
+    
+    result <- handle_simulation_request(test_event, NULL)
+    cat("📤 Handler result:\n")
+    cat(substr(result, 1, 500), "...\n")  # Show first 500 chars
+  } else {
+    cat("❌ Pipeline test failed, skipping handler test\n")
+  }
 }
 
 cat("✅ Ryan White Lambda handler ready\n")
