@@ -68,6 +68,9 @@ handle_simulation_request <- function(event, context) {
     base_simset <- get(ls()[1])  # Get the first (and should be only) object
     cat("✅ Base simulation loaded with", length(base_simset), "simulations\n")
     
+    # Validate parameters
+    validate_intervention_parameters(parameters)
+    
     # Step 2: Create Ryan White intervention
     cat("🔧 Creating Ryan White intervention...\n")
     intervention <- create_ryan_white_intervention(parameters)
