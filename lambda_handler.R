@@ -22,6 +22,72 @@ system.time({
 cat("✅ Workspace loaded with", length(ls()), "objects\n")
 cat("✅ RW.SPECIFICATION available:", exists("RW.SPECIFICATION"), "\n")
 
+# Ensure 'rw' model version is registered
+cat("🔧 Ensuring 'rw' model version is registered...\n")
+
+# First, try to restore VERSION.MANAGER state from hidden object
+if (exists(".jheem2_state", envir = .GlobalEnv)) {
+  cat("📦 Found .jheem2_state - attempting to restore VERSION.MANAGER...\n")
+  
+  tryCatch({
+    jheem2_ns <- asNamespace("jheem2")
+    vm <- jheem2_ns$VERSION.MANAGER
+    
+    # Clear current VERSION.MANAGER state
+    rm(list = ls(vm, all.names = TRUE), envir = vm)
+    
+    # Restore from saved state
+    saved_state <- .jheem2_state$version_manager
+    for (name in names(saved_state)) {
+      vm[[name]] <- saved_state[[name]]
+    }
+    
+    cat("✅ Restored", length(saved_state), "VERSION.MANAGER elements\n")
+    
+    # Verify restoration
+    if ("versions" %in% ls(vm, all.names = TRUE) && "rw" %in% vm$versions) {
+      cat("✅ 'rw' version successfully restored from saved state\n")
+    } else {
+      cat("⚠️ Warning: 'rw' version not found after restoration\n")
+    }
+    
+  }, error = function(e) {
+    cat("❌ Error restoring VERSION.MANAGER:", e$message, "\n")
+    cat("  Falling back to re-registration...\n")
+  })
+  
+} else {
+  cat("⚠️ No .jheem2_state found - falling back to re-registration...\n")
+}
+
+# Fallback: Try re-registration if restoration failed or .jheem2_state missing
+if (!version.has.been.registered('rw')) {
+  if (exists("RW.SPECIFICATION")) {
+    tryCatch({
+      # Register the model specification (should be idempotent)
+      register.model.specification(RW.SPECIFICATION)
+      cat("✅ RW.SPECIFICATION registered successfully\n")
+      
+      # Check if 'rw' version is available
+      if (exists("RYAN.WHITE.PARAMETERS.PRIOR") && exists("ryan.white.apply.set.parameters")) {
+        register.set.parameters.for.version('rw',
+                                            parameter.names = RYAN.WHITE.PARAMETERS.PRIOR@var.names,
+                                            apply.function = ryan.white.apply.set.parameters,
+                                            join.with.previous.version = TRUE)
+        cat("✅ 'rw' version parameters registered successfully\n")
+      } else {
+        cat("⚠️ Warning: RYAN.WHITE.PARAMETERS.PRIOR or ryan.white.apply.set.parameters not found\n")
+      }
+      
+    }, error = function(e) {
+      cat("⚠️ Warning: Could not register 'rw' version:", e$message, "\n")
+      cat("This may cause issues with intervention execution\n")
+    })
+  } else {
+    cat("⚠️ Warning: RW.SPECIFICATION not found in workspace\n")
+  }
+}
+
 # Load plotting utilities
 source("plotting_minimal.R")
 
@@ -64,9 +130,14 @@ handle_simulation_request <- function(event, context) {
     
     # Step 1: Load base simulation (already downloaded by trigger lambda)
     cat("📦 Loading base simulation data...\n")
-    load(base_simulation_path)
-    base_simset <- get(ls()[1])  # Get the first (and should be only) object
-    cat("✅ Base simulation loaded with", length(base_simset), "simulations\n")
+    
+    # Load the .rdata file and get the simulation object
+    loaded_objects <- load(base_simulation_path)
+    cat("  Loaded objects:", paste(loaded_objects, collapse = ", "), "\n")
+    
+    # Get the first loaded object (should be the simulation set)
+    base_simset <- get(loaded_objects[1])
+    cat("✅ Base simulation loaded with class:", class(base_simset), "\n")
     
     # Validate parameters
     validate_intervention_parameters(parameters)

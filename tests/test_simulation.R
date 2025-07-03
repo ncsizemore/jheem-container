@@ -23,9 +23,13 @@ test_simulation_pipeline <- function(base_simulation_path = "/app/test_base_sim.
       stop("Test base simulation file not found: ", base_simulation_path)
     }
     
-    load(base_simulation_path)
-    base_simset <- get(ls()[1])
-    cat("    ✅ Base simulation loaded\n")
+    # Load the .rdata file and get the simulation object
+    loaded_objects <- load(base_simulation_path)
+    cat("    Loaded objects:", paste(loaded_objects, collapse = ", "), "\n")
+    
+    # Get the first loaded object (should be the simulation set)
+    base_simset <- get(loaded_objects[1])
+    cat("✅ Base simulation loaded with class:", class(base_simset), "\n")
     
     # Step 2: Test intervention creation
     cat("  🔧 Testing intervention creation...\n")
