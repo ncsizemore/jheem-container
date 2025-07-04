@@ -106,7 +106,7 @@ RUN echo "📦 Cloning jheem_analyses at commit ${JHEEM_ANALYSES_COMMIT}..." && 
 RUN cd jheem_analyses && \
     mkdir -p cached && \
     echo "📦 Generating download commands from metadata..." && \
-    R -e "load('commoncode/data_manager_cache_metadata.Rdata'); for(file in names(cache.metadata)) { cat('wget -O cached/', file, ' \"', cache.metadata[[file]][['onedrive.link']], '\"', sep='', fill=TRUE) }" > download_commands.sh && \
+    R --slave -e "load('commoncode/data_manager_cache_metadata.Rdata'); for(file in names(cache.metadata)) { cat('wget -O cached/', file, ' \"', cache.metadata[[file]][['onedrive.link']], '\"', sep='', fill=TRUE) }" > download_commands.sh && \
     echo "📥 Downloading cached data files..." && \
     bash download_commands.sh && \
     echo "✅ Downloaded files:" && \
