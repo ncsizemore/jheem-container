@@ -1,5 +1,5 @@
-# Three-stage Dockerfile - build from parent directory version
-# Assumes build context includes both jheem-container-minimal/ and jheem/code/
+# Three-stage Dockerfile - self-contained build
+# Uses git clone for jheem_analyses dependency
 
 # =============================================================================
 # STAGE 1: Base R Environment (Reusable across models)
@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y \
   cmake \
   libabsl-dev \
   default-jdk \
+  git \
   && rm -rf /var/lib/apt/lists/* \
   && ARCH_LIB_DIR=$(dpkg-architecture -q DEB_HOST_MULTIARCH) \
   # Symlink for gert (libgit2)
@@ -50,8 +51,8 @@ RUN R -e "install.packages('pak', repos = 'https://r-lib.github.io/p/pak/stable/
 WORKDIR /app
 
 # Copy renv lockfile and configure RSPM for binaries
-COPY jheem-container-minimal/renv.lock ./
-COPY jheem-container-minimal/Rprofile.site /etc/R/
+COPY renv.lock ./
+COPY Rprofile.site /etc/R/
 
 # Install renv and check ICU version before restoring packages
 RUN R -e "pak::pkg_install('renv')" && \
@@ -89,11 +90,20 @@ RUN R --slave -e "\
 # =============================================================================
 FROM jheem-base AS workspace-builder
 
+# Build argument for jheem_analyses commit
+ARG JHEEM_ANALYSES_COMMIT=fc3fe1d2d5f859b322414da8b11f0182e635993b
+
 WORKDIR /app
 
-COPY jheem/code/jheem_analyses/ jheem_analyses/
+# Clone jheem_analyses at specific commit
+RUN echo "📦 Cloning jheem_analyses at commit ${JHEEM_ANALYSES_COMMIT}..." && \
+    git clone https://github.com/tfojo1/jheem_analyses.git jheem_analyses/ && \
+    cd jheem_analyses && \
+    git checkout ${JHEEM_ANALYSES_COMMIT} && \
+    echo "✅ jheem_analyses cloned successfully"
+
 RUN mkdir -p workspace_build
-COPY jheem-container-minimal/create_ryan_white_workspace.R workspace_build/
+COPY create_ryan_white_workspace.R workspace_build/
 
 RUN echo "🔧 Applying path fixes..." && \
   sed -i 's/USE.JHEEM2.PACKAGE = F/USE.JHEEM2.PACKAGE = T/' jheem_analyses/use_jheem2_package_setting.R && \
@@ -137,14 +147,14 @@ FROM jheem-base AS ryan-white-model
 COPY --from=workspace-builder /app/ryan_white_workspace.RData ./
 
 # Copy runtime scripts and modules from container directory
-COPY jheem-container-minimal/lambda_handler.R ./
-COPY jheem-container-minimal/plotting_minimal.R ./
-COPY jheem-container-minimal/simulation/ ./simulation/
-COPY jheem-container-minimal/plotting/ ./plotting/
-COPY jheem-container-minimal/tests/ ./tests/
+COPY lambda_handler.R ./
+COPY plotting_minimal.R ./
+COPY simulation/ ./simulation/
+COPY plotting/ ./plotting/
+COPY tests/ ./tests/
 
 # Copy test base simulation for local testing
-COPY jheem-container-minimal/test_base_sim.rdata ./
+COPY test_base_sim.rdata ./
 
 # Test that workspace loads correctly in final container
 RUN R --slave -e "\
@@ -168,6 +178,12 @@ CMD ["R", "--slave", "-e", "source('lambda_handler.R')"]
 # =============================================================================
 # Build Instructions:
 #
-# cd /Users/cristina/wiley/Documents/
-# docker build -f jheem-container-minimal/Dockerfile --target workspace-builder -t workspace-test .
+# Build from repository root:
+# docker build -t jheem-ryan-white-model .
+#
+# Build specific target:
+# docker build --target workspace-builder -t workspace-test .
+#
+# Build with different jheem_analyses commit:
+# docker build --build-arg JHEEM_ANALYSES_COMMIT=abc123 -t jheem-ryan-white-model .
 # =============================================================================
