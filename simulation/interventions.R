@@ -258,29 +258,23 @@ create_ryan_white_intervention <- function(parameters,
   cat("✅ Intervention created with code:", intervention_code, "\n")
   cat("   Total effects:", length(all_effects), "\n")
   
-  # Add detailed intervention inspection (like Shiny app)
-  cat("\n🔍 Intervention structure inspection:\n")
-  cat("  Code:", intervention$code, "\n")
-  cat("  Class:", class(intervention), "\n")
+  # Add detailed intervention inspection (exactly like Shiny app)
+  cat("\n🔍 Intervention structure (str output):\n")
+  str(intervention)
   
-  if (!is.null(intervention$effects)) {
-    cat("  Effects:", length(intervention$effects), "\n")
+  # Also show the actual foregrounds content
+  cat("\n🔍 Foregrounds content:\n")
+  if (!is.null(intervention$foregrounds) && length(intervention$foregrounds) > 0) {
+    for (i in 1:min(3, length(intervention$foregrounds))) {  # Show first 3
+      cat("  Foreground", i, ":\n")
+      str(intervention$foregrounds[[i]], max.level = 2)
+    }
+    if (length(intervention$foregrounds) > 3) {
+      cat("  ... and", length(intervention$foregrounds) - 3, "more foregrounds\n")
+    }
   } else {
-    cat("  Effects: NULL\n")
+    cat("  No foregrounds found\n")
   }
-  
-  if (!is.null(intervention$foregrounds)) {
-    cat("  Foregrounds:", length(intervention$foregrounds), "\n")
-  } else {
-    cat("  Foregrounds: NULL\n")
-  }
-  
-  if (!is.null(intervention$run) && is.function(intervention$run)) {
-    cat("  Run method: Available (function)\n")
-  } else {
-    cat("  Run method: NULL\n")
-  }
-  
   cat("\n")
 
   return(intervention)

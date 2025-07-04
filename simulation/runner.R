@@ -118,9 +118,38 @@ run_custom_simulation <- function(base_simset, intervention,
     # Create progress callback for monitoring
     progress_callback <- function(index, total, done) {
       if (verbose) {
-        percent <- if (total > 0) round((index / total) * 100) else 0
-        if (index %% 50 == 0 || index == 1 || index == total || done) {
-          cat("    Progress:", index, "/", total, "(", percent, "%) - Done:", done, "\n")
+        # Handle inconsistent total reporting from JHEEM2
+        # Track max total and avoid duplicate reporting
+        if (!exists("progress_state", envir = environment(progress_callback))) {
+          assign("progress_state", list(max_total = total, last_index = -1), 
+                envir = environment(progress_callback))
+        }
+        
+        state <- get("progress_state", envir = environment(progress_callback))
+        
+        # Update max total if we see a larger one
+        if (total > state$max_total) {
+          state$max_total <- total
+          assign("progress_state", state, envir = environment(progress_callback))
+        }
+        
+        # Only print if index actually advanced and we have meaningful total
+        if (index > state$last_index && state$max_total > 1) {
+          percent <- round((index / state$max_total) * 100)
+          
+          # Use carriage return for single-line updates
+          cat(sprintf("\r    Progress: %d/%d (%d%%) %s", 
+                     index, state$max_total, percent,
+                     if(index == state$max_total) "- Complete!" else ""))
+          
+          # Update state
+          state$last_index <- index
+          assign("progress_state", state, envir = environment(progress_callback))
+          
+          # Add newline only when complete
+          if (index == state$max_total) {
+            cat("\n")
+          }
         }
       }
     }
