@@ -22,6 +22,10 @@ system.time({
 cat("✅ Workspace loaded with", length(ls()), "objects\n")
 cat("✅ RW.SPECIFICATION available:", exists("RW.SPECIFICATION"), "\n")
 
+# Load required packages for simulation execution
+library(distributions)  # For generate.random.samples function
+cat("✅ Distributions package loaded\n")
+
 # Restore VERSION.MANAGER state from hidden object
 cat("🔧 Restoring 'rw' model version from saved state...\n")
 
