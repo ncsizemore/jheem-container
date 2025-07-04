@@ -112,6 +112,10 @@ RUN cd jheem_analyses && \
     echo "✅ Downloaded files:" && \
     ls -la cached/
 
+# TODO: Remove this manual copy when google_mobility_data.Rdata 
+# is added to the official cache metadata system
+COPY cached/google_mobility_data.Rdata jheem_analyses/cached/
+
 RUN mkdir -p workspace_build
 COPY create_ryan_white_workspace.R workspace_build/
 
